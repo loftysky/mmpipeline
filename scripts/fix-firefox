@@ -1,0 +1,9 @@
+#!/bin/bash
+
+killall firefox
+for root in "$HOME/.mozilla" "$HOME/Library/Application Support/Firefox"; do
+	if [[ -d "$root" ]]; then
+		find "$root" -name .parentlock -delete
+	fi
+done
+
