@@ -1,7 +1,12 @@
+import argparse
 import gzip
 import zlib
-
+import re
+import os
+from subprocess import check_call
 from lxml import etree
+
+from sgsession import Session
 
 
 '''
@@ -16,8 +21,17 @@ One second is 254016000000:
 >>> b30 * 30 == b24 * 24
 True
 
-
 '''
+
+TIME_BASE_24 = 10584000000
+TIME_BASE_30 = 8467200000
+TIME_BASE = 254016000000
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('prproj')
+args = parser.parse_args()
+
 
 class Element(etree.ElementBase):
 
@@ -49,7 +63,7 @@ parser = etree.XMLParser()
 parser.set_element_class_lookup(parser_lookup)
 
 
-unzipped = gzip.GzipFile('Scavenger_Hunt_edit.prproj', 'r')
+unzipped = gzip.GzipFile(args.prproj, 'r')
 
 tree = etree.parse(unzipped, parser)
 root = tree.getroot()
@@ -59,6 +73,10 @@ for node in root:
     id_ = node.attrib.get('ObjectID') or node.attrib.get('ObjectUID')
     if id_:
         by_id[id_] = node
+
+
+footage_by_time = {}
+metadata_by_time = {}
 
 
 for seq in root.findall('Sequence'):
@@ -110,7 +128,9 @@ for seq in root.findall('Sequence'):
 
                     path = media.find('FilePath').text
                     if path:
-                        print '    path:', path
+                        if not footage_by_time.get(start, end) or os.path.exists(path):
+                            print '    path:', path
+                            footage_by_time[start, end] = path
                     
                     prefs = media.find('ImporterPrefs')
                     if prefs is not None:
@@ -126,10 +146,112 @@ for seq in root.findall('Sequence'):
                             subtitle_root = etree.fromstring(raw)
                             for str_node in subtitle_root.findall('.//TRString'):
                                 print '    metadata:', str_node.text
+                                metadata_by_time[start, end] = str_node.text
 
                 print
 
 
     print
 
+
+
+
+# SHOTGUN PART
+
+sg = Session()
+
+episode = {'type': '$Episode', 'id': 8} # episode 5
+project = {'type': 'Project', 'id': 73} # Miao Miao
+template = {'type': 'TaskTemplate', 'id': 8}
+
+
+for (start, end), footage_path in sorted(footage_by_time.iteritems()):
+
+    metadata = metadata_by_time.get((start, end))
+    if not metadata:
+        continue
+
+    metadata = metadata.strip()
+    m = re.match(r'^Sc(\d+)(-?[0-9A-Z]+)?$', metadata)
+    if not m:
+        continue
+
+    start_frame = start / frame_rate
+    end_frame = end / frame_rate
+
+    num, variant = m.groups()
+    name = 'e05_sh%03d%s' % (int(num), variant or '') 
+    print start_frame, end_frame, metadata, name
+    print '   ', footage_path
+
+    #continue
+
+    shot = sg.find_one('Shot', [
+        ('sg_editorial_name', 'is', metadata),
+        ('project', 'is', project),
+        ('sg_episode', 'is', episode),
+    ], ['code', 'sg_cut_in', 'sg_cut_out'])
+
+    if not shot:
+        print 'Creating Shot...'
+        shot = sg.create('Shot', {
+            'project': project,
+            'sg_episode': episode,
+            'code': name,
+            'sg_editorial_name': metadata,
+            'sg_cut_in': start_frame,
+            'sg_cut_out': end_frame - 1, # TODO: Assert this is correct.
+            'sg_cut_duration': end_frame - start_frame,
+            'task_template': template,
+        })
+
+    elif shot['code'] != name or shot['sg_cut_in'] != start_frame or shot['sg_cut_out'] != end_frame - 1:
+        print 'Updating Shot...'
+        sg.update('Shot', shot['id'], {
+            'code': name,
+            'sg_cut_in': start_frame,
+            'sg_cut_out': end_frame - 1,
+            'sg_cut_duration': end_frame - start_frame,
+        })
+
+    else:
+        print 'Shot already exists:', shot
+
+    if not os.path.exists(footage_path):
+        continue
+
+    versions = sg.find('Version', [('entity', 'is', shot)], ['sg_path_to_movie', 'sg_uploaded_movie'])
+    version = next((v for v in versions if v['sg_path_to_movie'] == footage_path), None)
+
+    version_name = os.path.splitext(os.path.basename(footage_path))[0]
+
+    if not version:
+        
+        print 'Creating Version...'
+        version = sg.create('Version', {
+            'code': version_name,
+            'entity': shot,
+            'project': project,
+            'sg_path_to_movie': footage_path,
+        })
+
+        print 'Updating Shot.latest_version...'
+        sg.update('Shot', shot['id'], {'sg_latest_version': version})
+
+    if not version.get('sg_uploaded_movie'):
+
+        print 'Transcoding media:'
+        print '   ', footage_path
+
+        mp4_path = '/var/tmp/%s.%s.mp4' % (shot['code'], version_name)
+        check_call([os.path.abspath(os.path.join(__file__, '..', 'transcode.sh')), footage_path, mp4_path])
+
+        print 'Uploading media:'
+        print '   ', mp4_path
+        print '    %.2fMB' % (os.path.getsize(mp4_path) / 1024.0 / 1024)
+        sg.upload('Version', version['id'], mp4_path, 'sg_uploaded_movie')
+
+        os.unlink(mp4_path)
+
+    # exit()
 
