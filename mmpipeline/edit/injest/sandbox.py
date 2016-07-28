@@ -10,10 +10,11 @@ from sgsession import Session
 
 
 '''
->>> b24 = 10584000000
->>> b30 = 8467200000
->>> b24 * 24 / b30
-30
+b24   = 10584000000
+b2394 = 10594584000
+b30   = 8467200000
+b2997 = 8475667200
+
 
 The frame rate is the duration in whatever arbitrary base this is.
 One second is 254016000000:
@@ -27,8 +28,18 @@ TIME_BASE_24 = 10584000000
 TIME_BASE_30 = 8467200000
 TIME_BASE = 254016000000
 
+rate_names = {
+    10584000000: '24',
+    10594584000: '23.94',
+    8467200000:  '30',
+    8475667200:  '29.97',
+
+}
 
 parser = argparse.ArgumentParser()
+parser.add_argument('-p', '--parse-only', action='store_true')
+parser.add_argument('-e', '--episode', required=True, type=int)
+parser.add_argument('-n', '--dry-run', action='store_true')
 parser.add_argument('prproj')
 args = parser.parse_args()
 
@@ -57,6 +68,11 @@ class Element(etree.ElementBase):
         if id_:
             return by_id[id_]
 
+def time_to_frame(time, base):
+    frame = time / base
+    assert float(frame) == float(time) / base
+    return frame
+
 
 parser_lookup = etree.ElementDefaultClassLookup(element=Element)
 parser = etree.XMLParser()
@@ -77,7 +93,7 @@ for node in root:
 
 footage_by_time = {}
 metadata_by_time = {}
-
+video_transitions = []
 
 for seq in root.findall('Sequence'):
 
@@ -90,6 +106,7 @@ for seq in root.findall('Sequence'):
         print track_group
 
         frame_rate = int(track_group.find('.//FrameRate').text)
+        print '    rate: %-5s (%s)' % (rate_names.get(frame_rate, 'unknown'), frame_rate)
 
         for track_ref in track_group.findall('.//Track'):
             track = track_ref.ref
@@ -99,9 +116,14 @@ for seq in root.findall('Sequence'):
                 track_item = track_item_ref.ref
                 print track_item
 
-                start = int(track_item.find('.//Start').text)
-                end = int(track_item.find('.//End').text)
-                print '   from', start / frame_rate, 'to', end / frame_rate
+                start_frame = time_to_frame(int(track_item.find('.//Start').text), frame_rate)
+                end_frame   = time_to_frame(int(track_item.find('.//End'  ).text), frame_rate)
+                time_key    = (start_frame, end_frame)
+                print '   from', start_frame, 'to', end_frame
+
+                if track_item.tag == 'VideoTransitionTrackItem':
+                    video_transitions.append((start_frame, end_frame))
+                    continue
 
                 sub_clip = track_item.find('.//SubClip').ref
                 print sub_clip
@@ -128,9 +150,9 @@ for seq in root.findall('Sequence'):
 
                     path = media.find('FilePath').text
                     if path:
-                        if not footage_by_time.get(start, end) or os.path.exists(path):
+                        if not footage_by_time.get(time_key) or os.path.exists(path):
                             print '    path:', path
-                            footage_by_time[start, end] = path
+                            footage_by_time[time_key] = path
                     
                     prefs = media.find('ImporterPrefs')
                     if prefs is not None:
@@ -140,13 +162,13 @@ for seq in root.findall('Sequence'):
                         try:
                             raw = binary_struct[32:].decode('zip')
                         except zlib.error:
-                            print raw[:32]
+                            print repr(binary_struct[:32])
                         else:
                             #xml = raw.decode('utf16')
                             subtitle_root = etree.fromstring(raw)
                             for str_node in subtitle_root.findall('.//TRString'):
                                 print '    metadata:', str_node.text
-                                metadata_by_time[start, end] = str_node.text
+                                metadata_by_time[time_key] = str_node.text
 
                 print
 
@@ -154,20 +176,33 @@ for seq in root.findall('Sequence'):
     print
 
 
-
+if args.parse_only:
+    exit()  
 
 # SHOTGUN PART
 
 sg = Session()
 
-episode = {'type': '$Episode', 'id': 8} # episode 5
 project = {'type': 'Project', 'id': 73} # Miao Miao
 template = {'type': 'TaskTemplate', 'id': 8}
 
+print 'Finding episode...'
+episode = sg.find_one('$Episode', [
+    ('code', 'starts_with', 'Episode_%02d_' % args.episode),
+    ('project', 'is', project),
+], ['code'])
+print '   ', episode['code']
 
-for (start, end), footage_path in sorted(footage_by_time.iteritems()):
+print 'Finding Shots...'
+shots_by_edit_name = {}
+for shot in sg.find('Shot', [
+    ('sg_episode', 'is', episode),
+], ['code', 'sg_cut_in', 'sg_cut_out', 'sg_editorial_name']):
+    shots_by_edit_name[shot['sg_editorial_name']] = shot
 
-    metadata = metadata_by_time.get((start, end))
+for (start_frame, end_frame), footage_path in sorted(footage_by_time.iteritems()):
+
+    metadata = metadata_by_time.get((start_frame, end_frame))
     if not metadata:
         continue
 
@@ -176,21 +211,25 @@ for (start, end), footage_path in sorted(footage_by_time.iteritems()):
     if not m:
         continue
 
-    start_frame = start / frame_rate
-    end_frame = end / frame_rate
-
     num, variant = m.groups()
-    name = 'e05_sh%03d%s' % (int(num), variant or '') 
-    print start_frame, end_frame, metadata, name
+    name = 'e%02d_sh%03d%s' % (args.episode, int(num), variant or '')
+    print '%s (%s)' % (name, metadata)
+
+    for t_start, t_end in video_transitions:
+        if start_frame > t_start and start_frame <= t_end:
+            print '    starts in transition'
+            start_frame = t_start
+        if end_frame >= t_start and end_frame < t_end:
+            print '    ends in transition'
+            end_frame = t_end
+
+    print '   ', start_frame, 'to', end_frame, 
     print '   ', footage_path
 
-    #continue
+    if args.dry_run:
+        continue
 
-    shot = sg.find_one('Shot', [
-        ('sg_editorial_name', 'is', metadata),
-        ('project', 'is', project),
-        ('sg_episode', 'is', episode),
-    ], ['code', 'sg_cut_in', 'sg_cut_out'])
+    shot = shots_by_edit_name.get(metadata)
 
     if not shot:
         print 'Creating Shot...'
