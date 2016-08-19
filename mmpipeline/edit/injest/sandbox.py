@@ -161,8 +161,10 @@ for seq in root.findall('Sequence'):
                             #xml = raw.decode('utf16')
                             subtitle_root = etree.fromstring(raw)
                             for str_node in subtitle_root.findall('.//TRString'):
-                                print '    metadata:', str_node.text
-                                metadata_by_time[time_key] = str_node.text
+                                metadata = str_node.text.strip() if str_node.text is not None else None
+                                if metadata:
+                                    print '    metadata:', repr(metadata)
+                                    metadata_by_time.setdefault(time_key, []).append(metadata)
 
                 print
 
@@ -196,14 +198,23 @@ for shot in sg.find('Shot', [
 
 for (start_frame, end_frame), footage_paths in sorted(footage_by_time.iteritems()):
 
-    metadata = metadata_by_time.get((start_frame, end_frame))
-    if not metadata:
+    # Pick the best footage
+    footage_paths = list(set(footage_paths))
+    mov_path = next((path for path in footage_paths if path.lower().endswith('.mov')), None)
+    avi_path = next((path for path in footage_paths if path.lower().endswith('.avi')), None)
+    footage_path = mov_path or avi_path or footage_paths[0]
+
+    metadatas = metadata_by_time.get((start_frame, end_frame))
+    if not metadatas:
+        print 'No metadata for footage:', footage_path
         continue
 
-    metadata = metadata.strip()
-    m = re.match(r'^Sc(\d+)(-?[0-9a-zA-Z]+)?$', metadata)
-    if not m:
-        print '    metadata not recognized:', repr(metadata)
+    for metadata in metadatas:
+        m = re.match(r'^Sc(\d+)(-?[0-9a-zA-Z]+)?$', metadata)
+        if m:
+            break
+    else:
+        print '    metadata not recognized:', metadatas
         continue
 
     num, variant = m.groups()
@@ -217,12 +228,6 @@ for (start_frame, end_frame), footage_paths in sorted(footage_by_time.iteritems(
         if end_frame >= t_start and end_frame < t_end:
             print '    ends in transition'
             end_frame = t_end
-
-    # Pick the best footage
-    footage_paths = list(set(footage_paths))
-    mov_path = next((path for path in footage_paths if path.lower().endswith('.mov')), None)
-    avi_path = next((path for path in footage_paths if path.lower().endswith('.avi')), None)
-    footage_path = mov_path or avi_path or footage_paths[0]
 
     print '   ', start_frame, 'to', end_frame, 
     print '   ', footage_path
