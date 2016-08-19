@@ -215,7 +215,7 @@ for (start_frame, end_frame), footage_paths in sorted(footage_by_time.iteritems(
             continue
 
     for metadata in metadatas:
-        m = re.match(r'^Sc(\d+)(-?[0-9a-zA-Z]+)?$', metadata)
+        m = re.match(r'^Sc(\d+)([0-9a-zA-Z_-]+)?$', metadata)
         if m:
             break
     else:
