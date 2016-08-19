@@ -9,23 +9,7 @@ from lxml import etree
 from sgsession import Session
 
 
-'''
-b24   = 10584000000
-b2394 = 10594584000
-b30   = 8467200000
-b2997 = 8475667200
-
-
-The frame rate is the duration in whatever arbitrary base this is.
-One second is 254016000000:
-
->>> b30 * 30 == b24 * 24
-True
-
-'''
-
-TIME_BASE_24 = 10584000000
-TIME_BASE_30 = 8467200000
+# The frame rate is the duration in whatever arbitrary base this is.
 TIME_BASE = 254016000000
 
 rate_names = {
@@ -161,9 +145,8 @@ for seq in root.findall('Sequence'):
                     path = media.find('FilePath').text
                     if path:
                         path = translate_path(path)
-                        if not footage_by_time.get(time_key) or os.path.exists(path):
-                            print '    path:', path
-                            footage_by_time[time_key] = path
+                        if os.path.exists(path):
+                            footage_by_time.setdefault(time_key, []).append(path)
                     
                     prefs = media.find('ImporterPrefs')
                     if prefs is not None and prefs.text:
@@ -211,7 +194,7 @@ for shot in sg.find('Shot', [
 ], ['code', 'sg_cut_in', 'sg_cut_out', 'sg_editorial_name']):
     shots_by_edit_name[shot['sg_editorial_name']] = shot
 
-for (start_frame, end_frame), footage_path in sorted(footage_by_time.iteritems()):
+for (start_frame, end_frame), footage_paths in sorted(footage_by_time.iteritems()):
 
     metadata = metadata_by_time.get((start_frame, end_frame))
     if not metadata:
@@ -234,6 +217,12 @@ for (start_frame, end_frame), footage_path in sorted(footage_by_time.iteritems()
         if end_frame >= t_start and end_frame < t_end:
             print '    ends in transition'
             end_frame = t_end
+
+    # Pick the best footage
+    footage_paths = list(set(footage_paths))
+    mov_path = next((path for path in footage_paths if path.lower().endswith('.mov')), None)
+    avi_path = next((path for path in footage_paths if path.lower().endswith('.avi')), None)
+    footage_path = mov_path or avi_path or footage_paths[0]
 
     print '   ', start_frame, 'to', end_frame, 
     print '   ', footage_path
