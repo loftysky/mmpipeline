@@ -193,16 +193,14 @@ print 'Finding Shots...'
 shots_by_edit_name = {}
 for shot in sg.find('Shot', [
     ('sg_episode', 'is', episode),
-], ['code', 'sg_cut_in', 'sg_cut_out', 'sg_editorial_name']):
+], ['code', 'sg_cut_in', 'sg_cut_out', 'sg_editorial_name', 'sg_latest_version']):
     shots_by_edit_name[shot['sg_editorial_name']] = shot
 
 for (start_frame, end_frame), footage_paths in sorted(footage_by_time.iteritems()):
 
-    # Pick the best footage
-    footage_paths = list(set(footage_paths))
-    mov_path = next((path for path in footage_paths if path.lower().endswith('.mov')), None)
-    avi_path = next((path for path in footage_paths if path.lower().endswith('.avi')), None)
-    footage_path = mov_path or avi_path or footage_paths[0]
+    # Pick the most recently created footage.
+    footage_paths = sorted(set(footage_paths), key=lambda path: os.path.getctime(path))
+    footage_path = footage_paths[-1]
 
     metadatas = metadata_by_time.get((start_frame, end_frame))
     if not metadatas:
@@ -276,7 +274,6 @@ for (start_frame, end_frame), footage_paths in sorted(footage_by_time.iteritems(
     version_name = os.path.splitext(os.path.basename(footage_path))[0]
 
     if not version:
-        
         print 'Creating Version...'
         version = sg.create('Version', {
             'code': version_name,
@@ -285,6 +282,7 @@ for (start_frame, end_frame), footage_paths in sorted(footage_by_time.iteritems(
             'sg_path_to_movie': footage_path,
         })
 
+    if shot.get('sg_latest_version') is not version:
         print 'Updating Shot.latest_version...'
         sg.update('Shot', shot['id'], {'sg_latest_version': version})
 
@@ -302,6 +300,7 @@ for (start_frame, end_frame), footage_paths in sorted(footage_by_time.iteritems(
         sg.upload('Version', version['id'], mp4_path, 'sg_uploaded_movie')
 
         os.unlink(mp4_path)
+
 
     # exit()
 
