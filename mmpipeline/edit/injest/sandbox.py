@@ -206,8 +206,13 @@ for (start_frame, end_frame), footage_paths in sorted(footage_by_time.iteritems(
 
     metadatas = metadata_by_time.get((start_frame, end_frame))
     if not metadatas:
-        print 'No metadata for footage:', footage_path
-        continue
+        for (meta_start, meta_end), metadatas in sorted(metadata_by_time.iteritems()):
+            if start_frame == meta_start and end_frame < meta_end:
+                print 'Footage ends early...'
+                break
+        else:
+            print 'No metadata for footage:', footage_path
+            continue
 
     for metadata in metadatas:
         m = re.match(r'^Sc(\d+)(-?[0-9a-zA-Z]+)?$', metadata)
