@@ -37,6 +37,7 @@ rate_names = {
 }
 
 parser = argparse.ArgumentParser()
+parser.add_argument('-P', '--project', type=int, default=68) # Sandbox.
 parser.add_argument('-p', '--parse-only', action='store_true')
 parser.add_argument('-e', '--episode', required=True, type=int)
 parser.add_argument('-n', '--dry-run', action='store_true')
@@ -73,6 +74,12 @@ def time_to_frame(time, base):
     assert float(frame) == float(time) / base
     return frame
 
+def translate_path(path):
+    path = path.replace('\\', '/')
+    path = re.sub(r'^Y:/', '/Volumes/PD01/', path)
+    path = re.sub(r'^Z:/', '/Volumes/AnimationProjects/', path)
+    path = re.sub(r'^//10\.10\.1\.\d/pd01/', '/Volumes/PD01/', path)
+    return os.path.normpath(path)
 
 parser_lookup = etree.ElementDefaultClassLookup(element=Element)
 parser = etree.XMLParser()
@@ -145,17 +152,21 @@ for seq in root.findall('Sequence'):
                     source = clip.find('.//Source').ref
                     print source
 
-                    media = source.find('.//Media').ref
+                    try:
+                        media = source.find('.//Media').ref
+                    except AttributeError:
+                        continue
                     print media
 
                     path = media.find('FilePath').text
                     if path:
+                        path = translate_path(path)
                         if not footage_by_time.get(time_key) or os.path.exists(path):
                             print '    path:', path
                             footage_by_time[time_key] = path
                     
                     prefs = media.find('ImporterPrefs')
-                    if prefs is not None:
+                    if prefs is not None and prefs.text:
 
                         encoded = prefs.text
                         binary_struct = encoded.decode('base64')
@@ -183,7 +194,7 @@ if args.parse_only:
 
 sg = Session()
 
-project = {'type': 'Project', 'id': 73} # Miao Miao
+project = {'type': 'Project', 'id': args.project} # Miao Miao
 template = {'type': 'TaskTemplate', 'id': 8}
 
 print 'Finding episode...'
@@ -207,8 +218,9 @@ for (start_frame, end_frame), footage_path in sorted(footage_by_time.iteritems()
         continue
 
     metadata = metadata.strip()
-    m = re.match(r'^Sc(\d+)(-?[0-9A-Z]+)?$', metadata)
+    m = re.match(r'^Sc(\d+)(-?[0-9a-zA-Z]+)?$', metadata)
     if not m:
+        print '    metadata not recognized:', repr(metadata)
         continue
 
     num, variant = m.groups()
