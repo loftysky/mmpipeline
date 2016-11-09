@@ -13,7 +13,7 @@ setup(
     license='BSD-3',
     
     scripts=[
-        'scripts/fix-firefox',
+        'scripts/mm-fix-firefox',
     ],
 
     classifiers=[
