@@ -14,6 +14,7 @@ setup(
     
     scripts=[
         'scripts/mm-fix-firefox',
+        'scripts/mm-publish-audio',
     ],
 
     classifiers=[
