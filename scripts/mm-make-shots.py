@@ -32,7 +32,7 @@ def checkShots(seqname, shots, shotnum):
         shot_code.append(shot['code'])
     for val in temp_shots:
         if val in shot_code:
-            continue
+            print "This is already in the sequence", val
         else: 
             shot = sg.create('Shot', {
             'code': val,
@@ -40,7 +40,7 @@ def checkShots(seqname, shots, shotnum):
             'sg_sequence': seq,
             'project': project,
             })
-            print shot
+            print "Making", shot
 try: 
 
     #check project for sequence: 
