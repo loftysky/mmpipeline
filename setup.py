@@ -14,6 +14,7 @@ setup(
     
     scripts=[
         'scripts/mm-fix-firefox',
+        'scripts/mm-make-shots',
         'scripts/mm-publish-audio',
     ],
 
