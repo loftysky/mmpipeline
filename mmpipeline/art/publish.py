@@ -60,7 +60,7 @@ def main(argv=None):
             image_paths.append(pub_path)
 
             basename, ext = os.path.splitext(os.path.basename(pub_path))
-            proxy_path = publisher.unique_name(os.path.join(proxy_dir, basename))
+            proxy_path = publisher.unique_name(os.path.join(proxy_dir, basename + ext))
 
             # The first image is the "main" one.
             publisher.path = publisher.path or pub_path
@@ -82,7 +82,7 @@ def main(argv=None):
             proxy_paths.append(proxy_path)
 
             # First proxy is the thumbnail.
-            publisher.thumbnail_path = publisher.thumbnail_path = proxy_path
+            publisher.thumbnail_path = publisher.thumbnail_path or proxy_path
 
 
     if not args.no_promote:
