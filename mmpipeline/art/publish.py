@@ -72,7 +72,8 @@ def main(argv=None):
                     print >> sys.stderr, 'Resizing', path
                     subprocess.check_call(['convert', path, '-resize', '2048x2048>', proxy_path])
                 else:
-                    publisher.add_file(path, proxy_path)
+                    # Immediate so we can use it as the thumbnail.
+                    publisher.add_file(path, proxy_path, immediate=True)
             elif ext in PROXIED_EXTS:
                 proxy_path = publisher.unique_name(os.path.join(proxy_dir, basename + '.jpg'))
                 print >> sys.stderr, 'Converting', path
