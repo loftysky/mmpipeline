@@ -18,6 +18,12 @@ setup(
         'scripts/mm-publish-audio',
     ],
 
+    entry_points={
+        'console_scripts': '''
+            publish-art = mmpipeline.art.publish:main
+        ''',
+    },
+
     classifiers=[
         'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',
