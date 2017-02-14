@@ -14,13 +14,19 @@ setup(
     
     scripts=[
         'scripts/mm-fix-firefox',
-        'scripts/mm-make-shots',
-        'scripts/mm-publish-audio',
     ],
 
     entry_points={
         'console_scripts': '''
+
+
+            mm-make-shots = mmpipeline.layout.makeshots:main
+            mm-publish-art = mmpipeline.art.publish:main
+            mm-publish-audio = mmpipeline.audio.publish:main
+
+            # Deprecated (we prefer the "mm-" prefix).
             publish-art = mmpipeline.art.publish:main
+
         ''',
     },
 
