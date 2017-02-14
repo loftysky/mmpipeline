@@ -11,8 +11,8 @@ from sgpublish import Publisher
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-d', '--description')
-parser.add_argument('-D', '--debug', action='store_true',
-    help='Go to the sandbox.')
+parser.add_argument('-p', '--project',
+    help='Shotgun project to publish to. Good for debugging.')
 parser.add_argument('-n', '--dry-run', action='store_true',
     help='Dont do anything.')
 
@@ -24,7 +24,16 @@ sgfs = SGFS()
 sg = sgfs.session
 
 
-project = {'type': 'Project', 'id': 68 if args.debug else 74}
+if args.project:
+    project_input = args.project
+    project = sgfs.parse_user_input(args.project, ['Project'])
+else:
+    project_input = args.audio_files[0]
+    project = sgfs.entities_from_path(args.audio_files[0], 'Project')
+if not project:
+    print >> sys.stderr, 'Could not find Shotgun project for', project_input
+    exit(1)
+
 
 for path in args.audio_files:
 
