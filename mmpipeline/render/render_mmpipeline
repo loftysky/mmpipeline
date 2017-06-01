@@ -1,0 +1,124 @@
+#!/usr/bin/env python
+
+import argparse
+import errno
+import os
+import socket
+import subprocess
+from fractions import Fraction
+from maya import cmds
+from sgfs import SGFS
+import mmprojects52x2 as mmp
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-s', '--start', type=int)
+parser.add_argument('-e', '--end', type=int)
+#ask mike about expanduser
+#use sgfs to find task  where the scene file is sitting in, images directory and put it there /something/maya/images/scene something/ images
+#then /something/maya/images/scene something/camera 
+parser.add_argument('--out-dir')
+parser.add_argument('-o', '--out')
+parser.add_argument('-n', '--name')
+parser.add_argument('scene')
+args = parser.parse_args()
+
+
+startTime = cmds.playbackOptions(query=True, minTime=True)
+endTime = cmds.playbackOptions(query=True, maxTime=True)
+  
+if not args.start:
+    args.start = startTime
+if not args.end:
+    args.end = endTime
+
+name = args.name or os.path.splitext(os.path.basename(args.scene))[0]
+out_name = name
+
+
+def to_shadow_dimension(path, mkdirs=True):
+    path = os.path.abspath(path)
+    os.path.join('/Volumes/CGArtifacts', os.path.relpath(path, '/Volumes/CGroot'))
+    rel_path = os.path.relpath(path, '/Volumes/CGroot')
+    if rel_path.startswith('../'): 
+        raise ValueError
+    new_path = os.path.join('/Volumes/CGartifacts', rel_path)
+    new_dir = os.path.dirname(new_path)
+    if mkdirs: 
+        try:
+            os.makedirs(new_dir)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
+    return new_dir
+ 
+
+def find_scene_parent_path(path):
+    sgfs = SGFS()
+    entity_task = sgfs.entities_from_path(path, entity_type='Task')
+    task_path = sgfs.path_from_entity(entity_task[0])
+    parent_task_path, _ = os.path.split(task_path)
+    render_path = os.path.join(parent_task_path, '/render/maya/images')
+    if not os.isdir(render_path):
+        raise ValueError
+    if not args.out_dir:
+        out_dir = render_path 
+
+
+cmd = ['/Render',
+    '-r', 'mr', # Required for -rd to work.
+    '-s', str(args.start),
+    '-e', str(args.end),
+    '-batchContext', socket.gethostname(),
+]
+
+out_name = args.out or out_name
+out_dir  = os.path.join(args.out_dir, out_name)
+
+
+cmd.extend((
+    '-rd', out_dir,
+    '-im', name,
+    '-fnc', 'name.#.ext',
+    '-of', 'OpenEXR',
+    '-pad', '4',
+))
+
+
+
+
+
+cmd.append(args.scene)
+print '# Running on', socket.gethostname()
+print '$', ' '.join(cmd)
+
+
+os.execvp('Render', cmd)
+
+
+
+'''
+cmd_farmsoup = ['farmsoup', 'submit']
+
+cmd_farmsoup.extend((
+    '--shell',
+    '--range-loop',
+    'F=%s;X=1-%s;Y=1-%s' % (args.range, args.xslice, args.yslice),
+    'source ~/.bashrc; hostname; ~/sitg/bin/render %s -s $F -e $F -x $X/%s -y $Y/%s "%s"' % (args.args or '', args.xslice, args.yslice, args.scene),
+))
+
+print cmd
+
+os.execvp('farmsoup', cmd)
+
+      farmsoup submit --range-loop F=1-100/10 --shell 'myrender -s $F -e $F__end {scene}'
+
+
+'''
+
+
+
+
+
+
+
