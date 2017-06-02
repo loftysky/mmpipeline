@@ -1,20 +1,19 @@
-#!/usr/bin/env python
+#!/usr/bin/env mayapy
 
 import argparse
 import errno
 import os
 import socket
 import subprocess
-from fractions import Fraction
-from maya import cmds
-from sgfs import SGFS
-import mmprojects52x2 as mmp
+from fractions import Fraction   
+from maya import cmds, standalone
+from sgfs import SGFS 
+from mmproject52x2 import renderSetup as mmpr
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-s', '--start', type=int)
 parser.add_argument('-e', '--end', type=int)
-#ask mike about expanduser
 #use sgfs to find task  where the scene file is sitting in, images directory and put it there /something/maya/images/scene something/ images
 #then /something/maya/images/scene something/camera 
 parser.add_argument('--out-dir')
@@ -24,9 +23,11 @@ parser.add_argument('scene')
 args = parser.parse_args()
 
 
+standalone.initialize()
+cmds.file(args.scene, open=True)
 startTime = cmds.playbackOptions(query=True, minTime=True)
 endTime = cmds.playbackOptions(query=True, maxTime=True)
-  
+
 if not args.start:
     args.start = startTime
 if not args.end:
@@ -44,48 +45,60 @@ def to_shadow_dimension(path, mkdirs=True):
         raise ValueError
     new_path = os.path.join('/Volumes/CGartifacts', rel_path)
     new_dir = os.path.dirname(new_path)
+    print 'new_path_', new_path, 'new_dir', new_dir
     if mkdirs: 
         try:
             os.makedirs(new_dir)
         except OSError as e:
             if e.errno != errno.EEXIST:
                 raise
-    return new_dir
+    return new_path
  
 
 def find_scene_parent_path(path):
     sgfs = SGFS()
     entity_task = sgfs.entities_from_path(path, entity_type='Task')
-    task_path = sgfs.path_from_entity(entity_task[0])
-    parent_task_path, _ = os.path.split(task_path)
-    render_path = os.path.join(parent_task_path, '/render/maya/images')
-    if not os.isdir(render_path):
-        raise ValueError
+    task_path = sgfs.path_for_entity(entity_task[0])
+    render = '/render'
+    render_path = os.path.join(to_shadow_dimension(task_path), 'maya', 'images')
+    if not os.path.isdir(render_path):
+        os.makedirs(render_path)
+        args.out_dir = render_path  
     if not args.out_dir:
-        out_dir = render_path 
+        args.out_dir = render_path 
 
 
-cmd = ['/Render',
-    '-r', 'mr', # Required for -rd to work.
-    '-s', str(args.start),
-    '-e', str(args.end),
-    '-batchContext', socket.gethostname(),
+to_shadow_dimension(args.scene)
+original_filename = os.path.basename(to_shadow_dimension(args.scene))
+maya_type = 'mayaBinary' if '.mb' in original_filename else 'mayaAscii'
+cmds.file(rename=to_shadow_dimension(args.scene))
+cmds.file(save=True, type=maya_type)
+
+find_scene_parent_path(args.scene)
+
+#call render setup
+mmpr.setRender()
+
+
+cmd = ['Render',
+    '-r', 'mr', 
+    '-s', '$F',
+    '-e', '$F__end',
 ]
 
+
 out_name = args.out or out_name
-out_dir  = os.path.join(args.out_dir, out_name)
+
+out_dir  = os.path.join(args.out_dir, out_name) 
 
 
 cmd.extend((
     '-rd', out_dir,
-    '-im', name,
+    '-im', out_name,
     '-fnc', 'name.#.ext',
-    '-of', 'OpenEXR',
+    '-of', 'tga',
     '-pad', '4',
 ))
-
-
-
 
 
 cmd.append(args.scene)
@@ -93,32 +106,18 @@ print '# Running on', socket.gethostname()
 print '$', ' '.join(cmd)
 
 
-os.execvp('Render', cmd)
-
-
-
-'''
 cmd_farmsoup = ['farmsoup', 'submit']
 
 cmd_farmsoup.extend((
     '--shell',
     '--range-loop',
-    'F=%s;X=1-%s;Y=1-%s' % (args.range, args.xslice, args.yslice),
-    'source ~/.bashrc; hostname; ~/sitg/bin/render %s -s $F -e $F -x $X/%s -y $Y/%s "%s"' % (args.args or '', args.xslice, args.yslice, args.scene),
-))
+    'F=%d-%d/10' % (args.start, args.end),
+    ))
 
-print cmd
-
-os.execvp('farmsoup', cmd)
-
-      farmsoup submit --range-loop F=1-100/10 --shell 'myrender -s $F -e $F__end {scene}'
-
-
-'''
-
-
-
-
+fcmd = ' '.join(str(x) for x in cmd)
+cmd_farmsoup.append(fcmd)
+print cmd_farmsoup
+os.execvp('farmsoup', cmd_farmsoup)
 
 
 
