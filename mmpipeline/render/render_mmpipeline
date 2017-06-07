@@ -11,32 +11,7 @@ from sgfs import SGFS
 from mmproject52x2 import renderSetup as mmpr
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-s', '--start', type=int)
-parser.add_argument('-e', '--end', type=int)
-#use sgfs to find task  where the scene file is sitting in, images directory and put it there /something/maya/images/scene something/ images
-#then /something/maya/images/scene something/camera 
-parser.add_argument('--out-dir')
-parser.add_argument('-o', '--out')
-parser.add_argument('-n', '--name')
-parser.add_argument('scene')
-args = parser.parse_args()
-
-
-standalone.initialize()
-cmds.file(args.scene, open=True)
-startTime = cmds.playbackOptions(query=True, minTime=True)
-endTime = cmds.playbackOptions(query=True, maxTime=True)
-
-if not args.start:
-    args.start = startTime
-if not args.end:
-    args.end = endTime
-
-name = args.name or os.path.splitext(os.path.basename(args.scene))[0]
-out_name = name
-
-#returns path to CGartifacts
+#returns directory tree from args.scene and duplicates it on  CGartifacts
 def to_shadow_dimension(path, mkdirs=True):
     path = os.path.abspath(path)
     rel_path = os.path.relpath(path, '/Volumes/CGroot')
@@ -69,56 +44,83 @@ def make_render_to_shadow_dimension(path):
 
 
 #saving maya scene to the CGArtifacts
-new_scene = to_shadow_dimension(args.scene)
-original_filename = os.path.basename(new_scene)
-maya_type = 'mayaBinary' if '.mb' in original_filename else 'mayaAscii'
-cmds.file(rename=new_scene)
-cmds.file(save=True, type=maya_type)
+def saving_to_shadow_dimension(path):
+    new_scene = to_shadow_dimension(args.scene)
+    original_filename = os.path.basename(new_scene)
+    maya_type = 'mayaBinary' if '.mb' in original_filename else 'mayaAscii'
+    cmds.file(rename=new_scene)
+    cmds.file(save=True, type=maya_type)
+    make_render_to_shadow_dimension(args.scene)
 
-make_render_to_shadow_dimension(args.scene)
-
-#call render setup
-#mmpr.setRender()
 
 
 #setting up Render command 
-cmd = ['Render',
-    '-r', 'mr', 
-    '-s', '$F',
-    '-e', '$F__end',
-]
+def farmsoup_render_setup():
+    cmd = ['Render',
+        '-r', 'mr', 
+        '-s', '$F',
+        '-e', '$F__end',
+    ]
 
 
-out_name = args.out or out_name
-out_dir  = os.path.join(args.out_dir, out_name) 
+    out_name = args.out or out_name
+    out_dir  = os.path.join(args.out_dir, out_name) 
 
-cmd.extend((
-    '-rd', out_dir,
-    '-im', out_name,
-    '-fnc', 'name.#.ext',
-    '-of', 'tga',
-    '-pad', '4',
-))
-
-
-cmd.append(args.scene)
-print '# Running on', socket.gethostname()
-print '$', ' '.join(cmd)
-
-
-#Adding Farmsoup command
-cmd_farmsoup = ['farmsoup', 'submit']
-
-cmd_farmsoup.extend((
-    '--shell',
-    '--range-loop',
-    'F=%d-%d/10' % (args.start, args.end),
+    cmd.extend((
+        '-rd', out_dir,
+        '-im', out_name,
+        '-fnc', 'name.#.ext',
+        '-of', 'tga',
+        '-pad', '4',
     ))
 
-fcmd = ' '.join(str(x) for x in cmd)
-cmd_farmsoup.append(fcmd)
-print cmd_farmsoup
-os.execvp('farmsoup', cmd_farmsoup)
+    cmd.append(args.scene)
+    print '# Running on', socket.gethostname()
+    print '$', ' '.join(cmd)
 
 
+    #Adding Farmsoup command
+    cmd_farmsoup = ['farmsoup', 'submit']
+
+    cmd_farmsoup.extend((
+        '--shell',
+        '--range-loop',
+        'F=%d-%d/10' % (args.start, args.end),
+        ))
+
+    fcmd = ' '.join(str(x) for x in cmd)
+    cmd_farmsoup.append(fcmd)
+    return cmd_farmsoup
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-s', '--start', type=int)
+    parser.add_argument('-e', '--end', type=int)
+    parser.add_argument('--out-dir')
+    parser.add_argument('-o', '--out')
+    parser.add_argument('-n', '--name')
+    parser.add_argument('scene')
+    args = parser.parse_args()
+
+
+    standalone.initialize()
+    cmds.file(args.scene, open=True)
+    startTime = cmds.playbackOptions(query=True, minTime=True)
+    endTime = cmds.playbackOptions(query=True, maxTime=True)
+
+    if not args.start:
+        args.start = startTime
+    if not args.end:
+        args.end = endTime
+
+    name = args.name or os.path.splitext(os.path.basename(args.scene))[0]
+    out_name = name
+    #call render setup
+    saving_to_shadow_dimension(args.scene)
+    mmpr.setRender()
+    os.execvp('farmsoup', farmsoup_render_setup())
+
+
+if __name__ == "__main__":
+    main()
 
