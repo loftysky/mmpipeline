@@ -8,7 +8,9 @@ import subprocess
 from fractions import Fraction   
 from maya import cmds, standalone
 from sgfs import SGFS 
-from mmproject52x2 import renderSetup as mmpr
+import renderSetup as mmpr
+
+
 
 
 #returns directory tree from args.scene and duplicates it on  CGartifacts
@@ -30,9 +32,9 @@ def to_shadow_dimension(path, mkdirs=True):
  
 
 #using SGFS to find the parent task entity associated with the publish and creating the render directory in CGArtifacts 
-def make_render_to_shadow_dimension(path):
+def make_render_to_shadow_dimension(path_for_entity, args):
     sgfs = SGFS()
-    entity_task = sgfs.entities_from_path(path, entity_type='Task')
+    entity_task = sgfs.entities_from_path(path_for_entity, entity_type='Task')
     task_path = sgfs.path_for_entity(entity_task[0])
     render = '/render'
     render_path = os.path.join(to_shadow_dimension(task_path), 'maya', 'images')
@@ -44,18 +46,20 @@ def make_render_to_shadow_dimension(path):
 
 
 #saving maya scene to the CGArtifacts
-def saving_to_shadow_dimension(path):
-    new_scene = to_shadow_dimension(args.scene)
+def save_to_shadow_dimension(path, args):
+    new_scene = to_shadow_dimension(path)
     original_filename = os.path.basename(new_scene)
     maya_type = 'mayaBinary' if '.mb' in original_filename else 'mayaAscii'
     cmds.file(rename=new_scene)
     cmds.file(save=True, type=maya_type)
-    make_render_to_shadow_dimension(args.scene)
+
+    make_render_to_shadow_dimension(path, args)
 
 
 
+
+def farmsoup_command(out_name, args):
 #setting up Render command 
-def farmsoup_render_setup():
     cmd = ['Render',
         '-r', 'mr', 
         '-s', '$F',
@@ -84,13 +88,15 @@ def farmsoup_render_setup():
 
     cmd_farmsoup.extend((
         '--shell',
-        '--range-loop',
+        '--range',
         'F=%d-%d/10' % (args.start, args.end),
         ))
 
     fcmd = ' '.join(str(x) for x in cmd)
     cmd_farmsoup.append(fcmd)
+    print cmd_farmsoup
     return cmd_farmsoup
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -101,7 +107,6 @@ def main():
     parser.add_argument('-n', '--name')
     parser.add_argument('scene')
     args = parser.parse_args()
-
 
     standalone.initialize()
     cmds.file(args.scene, open=True)
@@ -115,12 +120,11 @@ def main():
 
     name = args.name or os.path.splitext(os.path.basename(args.scene))[0]
     out_name = name
-    #call render setup
-    saving_to_shadow_dimension(args.scene)
-    mmpr.setRender()
-    os.execvp('farmsoup', farmsoup_render_setup())
 
+    #call render setup
+    mmpr.main()
+    save_to_shadow_dimension(args.scene, args)
+    os.execvp('farmsoup', farmsoup_command(out_name, args))
 
 if __name__ == "__main__":
     main()
-
